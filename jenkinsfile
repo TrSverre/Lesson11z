@@ -1,0 +1,40 @@
+pipeline {
+    agent {
+        docker {
+                image 'trsverre/build'
+                args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
+    stages {
+        stage('Clone repository') {
+            steps {
+                git branch: 'master', url: 'https://github.com/TrSverre/lesson11kl.git'
+            }
+        }
+        stage('Compile code') {
+            steps {
+                sh 'mvn package'
+            }
+        }
+        stage('Build image for prod') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dhub', passwordVariable: 'PASS', usernameVariable: 'NAME')]){
+                    sh 'cp webapp/target/webapp.war ./'
+                    sh 'docker build -t dz11:1 . && docker tag dz11:1 ${NAME}/dz11:1 && docker login -u ${NAME} -p ${PASS} && docker push ${NAME}/dz11:1'
+                }    
+            }
+        }
+        stage('Run docker on prod') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dhub', passwordVariable: 'PASS', usernameVariable: 'NAME')]){
+                    sh 'pwd && cd /home/ && pwd && ls -la && ssh-keyscan 89.169.167.49 >> ~/.ssh/known_hosts'
+                    sh '''ssh root@89.169.167.49 << EOF
+	                  docker login -u ${NAME} -p ${PASS}
+                      docker pull ${NAME}/dz11:1
+	                  docker run -d -p 8888:8080 ${NAME}/dz11:1
+                   << EOF'''
+                }
+            }
+        }
+    }
+}
